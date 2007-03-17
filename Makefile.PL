@@ -7,7 +7,7 @@ WriteMakefile(
     AUTHOR              => 'Julian Fondren <ayrnieu@cpan.org>',
     ABSTRACT            => 'A read-eval-print-loop for Perl',
     VERSION_FROM        => 'lib/App/REPL.pm',
-    ABSTRACT_FROM       => 'lib/App/REPL.pm',
+    ABSTRACT            => 'A read-eval-print-loop for Perl',
     EXE_FILES           => [ 'iperl' ],
     PREREQ_PM => {
         'Test::More'      => 0,

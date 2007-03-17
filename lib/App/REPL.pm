@@ -8,17 +8,18 @@ $Term::ANSIColor::AUTORESET = 1;
 require Exporter;
 use vars qw(@ISA @EXPORT $VERSION);
 
-$VERSION = '0.01';
+$VERSION = '0.011';
 @ISA = qw(Exporter);
 @EXPORT = qw(x p env ret rdebug help);
 
+# ----------------------------------------------------------------------
 sub x { print Dumper @_ }
 sub p { print @_, "\n" }
 sub env { peek_my(1) }
-sub ret { $REPL::ret }
+sub ret { $App::REPL::ret }
 sub rdebug {
-  if (@_) { $REPL::DEBUG = shift } else { $REPL::DEBUG++ }
-  print YELLOW "Debug level set to $REPL::DEBUG\n"
+  if (@_) { $App::REPL::DEBUG = shift } else { $App::REPL::DEBUG++ }
+  print YELLOW "Debug level set to $App::REPL::DEBUG\n"
 }
 sub help {
   if (@_ and shift eq 'commands') {
@@ -33,6 +34,7 @@ EOH
   }
 }
 
+# ----------------------------------------------------------------------
 =head1 NAME
 
 App::REPL - A container for functions for the iperl program
@@ -45,6 +47,8 @@ Version 0.01
 
 This module contains functions that the iperl program automatically
 imports into any package it enters, for interactive convenience.
+
+Please see the README for general information.
 
 =head1 EXPORT
 

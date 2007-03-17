@@ -1,29 +1,36 @@
 #! /usr/bin/env perl
-package REPL;
 use strict;
 use warnings;
+use Term::ANSIColor ':constants';
+$Term::ANSIColor::AUTORESET = 1;
+
+# ----------------------------------------------------------------------
+# This first, to keep PadWalker away from lexical variables below.
+sub scoped_eval {
+  print MAGENTA @_ if $App::REPL::DEBUG;
+  eval shift;
+  print BOLD YELLOW $@ if $@;
+}
+
 use PadWalker 'peek_my';
 use PPI;
 use PPI::Find;
 use Data::Dumper;
 use Symbol;
 use Term::ReadLine;
-use Term::ANSIColor ':constants';
-$Term::ANSIColor::AUTORESET = 1;
-use vars qw($DEBUG $VERSION);
-$DEBUG = 0;
-$VERSION = '0.01';
+$App::REPL::DEBUG = 0;
 
-$REPL::in_package = 'REPL';
-%REPL::ppi = ();  # store PPI::Find objects
+{ my $in_package = 'App::REPL';
+  sub in_package { @_ ? $in_package = shift : $in_package }
+}
 
 # ----------------------------------------------------------------------
 # Added RESET as the color somehow bleeds into the prompt
 # -- when we use Term::ReadLine
 { my $prompt;
   my $term = Term::ReadLine->new('iperl');
-  sub pnew  { $prompt = RESET . $REPL::in_package . ' _ ' }
-  sub pcont { $prompt = RESET . $REPL::in_package . '. ' }
+  sub pnew  { $prompt = RESET . in_package . ' _ ' }
+  sub pcont { $prompt = RESET . in_package . '. ' }
   sub prompt {
     my $s = $term->readline($prompt);
     $term->addhistory($s) if defined($s) and $s =~ /\S/;
@@ -40,93 +47,84 @@ sub eek { print STDERR BOLD RED @_, "\n"; goto REPL }
 # through subsequent evals -- unless the eval'd returns from the eval,
 # in which case the next eval will get the same variables.
 #--
-use constant PRO_IN  => <<'EOP';
+use constant PRO_IN => <<'EOP';
   use App::REPL;
   use strict;
   no warnings 'void';
 EOP
 sub PRO {
   my $r = "no strict 'refs';\n"
-        . "package $REPL::in_package;\n";
-  my $h = do { no strict 'refs'; ${$REPL::in_package . '::REPL::env'} || {}};
+        . "package @{[in_package]};\n";
+  my $h = do { no strict 'refs'; ${in_package . '::REPL::env'} || {}};
   for (keys %$h) {
     /^(.)/;
-    # no strict 'refs'; # what the hell?
-    $r .= "my $_ = $1" . q,{${"${REPL::in_package}::REPL::env"}->, . "{'$_'}};\n"
+    $r .= "my $_ = $1" . q,{${", . in_package . q,::REPL::env"}->, . "{'$_'}};\n"
   }
   $r . PRO_IN
 }
-use constant EPI  => <<'EOE';
+use constant EPI => <<'EOE';
   ;
   no strict 'refs';
-  ($REPL::in_package = Symbol::qualify('')) =~ s/::$//;
-  ${$REPL::in_package . '::REPL::env'} = PadWalker::peek_my(0)
+  for (Symbol::qualify('')) { s/::$//; main::in_package($_) }
+  ${main::in_package . '::REPL::env'} = PadWalker::peek_my(0)
 EOE
-
-# ----------------------------------------------------------------------
-# REPL evals happen in this sub to keep the &repl variables from leaking
-# into the interactive environment.
-sub scoped_eval {
-  print MAGENTA @_ if $DEBUG;
-  eval shift;
-  print BOLD YELLOW $@ if $@;
-}
 
 # ----------------------------------------------------------------------
 # More magic.  This finds the final statement of some Perl, wherever
 # that statement may be (even if its result cannot escape the overall
-# evaluation), and saves its value in $REPL::ret
+# evaluation), and saves its value in $App::REPL::ret
 #--
-{ no warnings; $REPL::ret = '' }
-$REPL::ppi{statement} = PPI::Find->new(sub { shift->isa('PPI::Statement') });
-sub save_ret {
-  my $d = shift;
+$App::REPL::ret = '';
+{ my $f = PPI::Find->new(sub { shift->isa('PPI::Statement') });
+  sub save_ret {
+    my $d = shift;
+  
+    # don't even try if it contains something troublesome.
+    return $d->serialize if has_troublesome($d);
+  
+    my @s = $f->in($d);
+    for (reverse @s) {
+      next if within_constructor($_, $d);
+      print Dumper $d if $App::REPL::DEBUG > 1;
+      unshift @{$_->{children}},
+        bless({content => '$App::REPL::ret'}, 'PPI::Token::Symbol'),
+        bless({content => '='},               'PPI::Token::Operator');
+      return $d->serialize
+    }
+  
+    # try and save the whole thing
+    return '$App::REPL::ret = ' . $d->serialize if @s;
 
-  # don't even try if it contains something troublesome.
-  return $d->serialize if has_troublesome($d);
-
-  my @s = $REPL::ppi{statement}->in($d);
-  for (reverse @s) {
-    next if within_constructor($_, $d);
-    print Dumper $d if $REPL::DEBUG > 1;
-    unshift @{$_->{children}},
-      bless({content => '$REPL::ret'}, 'PPI::Token::Symbol'),
-      bless({content => '='},          'PPI::Token::Operator');
-    return $d->serialize
+    # give up
+    $d->serialize
   }
-
-  # try and save the whole thing
-  return '$REPL::ret = ' . $d->serialize if @s;
-
-  # give up
-  $d->serialize
 }
 
-my %troublesome = map { $_, 1 } qw(sub package use require my our local);
-$REPL::ppi{troublesome} = PPI::Find->new(sub {
-  return 0 unless (my $e = shift)->isa('PPI::Token::Word');
-  return 1 if exists $troublesome{$e->{content}};
-  0
-});
-sub has_troublesome {
-  my $d = shift;
-  $REPL::ppi{troublesome}->in($d)
+
+{ my %troublesome = map { $_, 1 } qw(sub package use require my our local);
+  my $f = PPI::Find->new(sub {
+    return 0 unless (my $e = shift)->isa('PPI::Token::Word');
+    return 1 if exists $troublesome{$e->{content}};
+    0
+  });
+  sub has_troublesome { $f->in(shift) } 
 }
   
 sub dump_ret {
   return if ref $_[0] eq 'CODE';
-  print BOLD CYAN Dumper $REPL::ret if $REPL::ret;
+  print BOLD CYAN Dumper $App::REPL::ret if $App::REPL::ret;
 }
 
-$REPL::ppi{block} = PPI::Find->new(sub { $_[0]->isa('PPI::Structure::Constructor')
-                                or $_[0]->isa('PPI::Structure::Block') });
-sub within_constructor {
-  my ($s, $d) = @_;
-  my $fs = PPI::Find->new(sub { shift eq $s });
-  for ($REPL::ppi{block}->in($d)) {
-    return 1 for $fs->in($_);
+{ my $fc = PPI::Find->new(sub { $_[0]->isa('PPI::Structure::Constructor')
+                             or $_[0]->isa('PPI::Structure::Block') });
+  sub within_constructor {
+    my ($s, $d) = @_;
+    my $fs = PPI::Find->new(sub { shift eq $s });
+    for ($fc->in($d)) {
+      return 1 for $fs->in($_);
+    }
+    0
   }
-  0
 }
 
 # ----------------------------------------------------------------------
@@ -134,34 +132,33 @@ sub within_constructor {
 # blocks and such so that the repl can request more lines until they
 # complete.  Note that this does -not- handle e.g. qw(
 #--
-$REPL::ppi{unfinished} = PPI::Find->new(\&unfinished);
-sub repl {
-  my $s = '';
-  REPL: while (defined($_ = prompt)) {
-    $s .= "\n" . $_;
-    my $d = PPI::Document->new(\$s);
-    if ($REPL::ppi{unfinished}->in($d)) {
-      pcont
-    }
-    else {
-      scoped_eval PRO . save_ret($d) . EPI;
-      dump_ret;
-      $REPL::ret = '';
-      $s = '';
-      pnew
+{ my $f = PPI::Find->new(sub {
+    my %h = %{+shift};
+    (exists $h{start} and !exists $h{finish}) ? 1 : 0
+  });
+  sub repl {
+    my $s = '';
+    REPL: while (defined($_ = prompt)) {
+      $s .= "\n" . $_;
+      my $d = PPI::Document->new(\$s);
+      if ($f->in($d)) {
+        pcont
+      }
+      else {
+        scoped_eval PRO . save_ret($d) . EPI;
+        dump_ret;
+        $App::REPL::ret = '';
+        $s = '';
+        pnew
+      }
     }
   }
 }
 
-sub unfinished {
-  my %h = %{+shift};
-  (exists $h{start} and !exists $h{finish}) ? 1 : 0
-}
-
 
 # ----------------------------------------------------------------------
-package REPL;
-repl;
+package App::REPL;
+main::repl();
 
 
 

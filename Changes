@@ -10,3 +10,6 @@ Revision history for App-REPL
         Makefile.PL now has an ABSTRACT
 
 	App::REPL points towards the README for real documentation.
+
+0.012	11 Apr 2007
+	Very small changes to support colorless operation.

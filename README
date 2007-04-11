@@ -1,4 +1,4 @@
-App-REPL v0.1
+App-REPL v0.012
 
 0. The install worked, but 'iperl' is complaining that it can't find App::REPL !
    Why do you hate me?
@@ -75,6 +75,11 @@ App-REPL v0.1
     package A; my $b = 1; package B;
   
   '$b' will not be available for your next eval.
+
+8. You know, your colors are very annoying.  Can I turn them off?
+
+  Sure, just set the ANSI_COLORS_DISABLED environment variable
+  that Term::ANSIColor checks.
 
 
 INSTALLATION

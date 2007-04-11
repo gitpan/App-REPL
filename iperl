@@ -36,7 +36,8 @@ $App::REPL::DEBUG = 0;
     $term->addhistory($s) if defined($s) and $s =~ /\S/;
     $s
   }
-  pnew
+  pnew;
+  $term->ornaments(0)
 }
 
 sub eek { print STDERR BOLD RED @_, "\n"; goto REPL }

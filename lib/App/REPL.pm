@@ -8,7 +8,7 @@ $Term::ANSIColor::AUTORESET = 1;
 require Exporter;
 use vars qw(@ISA @EXPORT $VERSION);
 
-$VERSION = '0.011';
+$VERSION = '0.012';
 @ISA = qw(Exporter);
 @EXPORT = qw(x p env ret rdebug help);
 
@@ -34,6 +34,10 @@ EOH
   }
 }
 
+
+1;
+
+__END__
 # ----------------------------------------------------------------------
 =head1 NAME
 
@@ -118,7 +122,3 @@ Copyright 2007 Julian Fondren, all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
-
-=cut
-
-1; # End of App::REPL
